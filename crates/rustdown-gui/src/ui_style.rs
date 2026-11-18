@@ -328,6 +328,7 @@ fn system_fonts_dir() -> Option<PathBuf> {
 /// `env_override` (`RUSTDOWN_FONT_PATH`) goes in front of both families.
 /// Chains: override, system primary, bundled primary, bundled symbol
 /// fallbacks, then system fallbacks for extended coverage.
+#[cfg(test)]
 pub(crate) fn font_definitions(
     fonts_dir: Option<&Path>,
     env_override: Option<(String, Vec<u8>)>,
