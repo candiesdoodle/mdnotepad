@@ -298,10 +298,11 @@ mod tests {
             ..RustdownApp::default()
         };
         let output = driver.settle(&mut app);
+        let version = format!("Version {}", app_identity::VERSION);
         for text in [
             ABOUT_TITLE,
             app_identity::APP_NAME,
-            "Version 1.0.0",
+            version.as_str(),
             "© 2026 candiesdoodle",
             "Based on rustdown by teh-hippo (MIT License)",
             "License",

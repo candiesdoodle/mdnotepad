@@ -95,8 +95,14 @@ mod tests {
             "the id is safe in paths, pipe names and registry keys"
         );
         assert_eq!(EXE_NAME, format!("{APP_NAME}.exe"));
-        assert_eq!(VERSION, "1.0.0");
-        assert_eq!(version_line(), format!("{APP_NAME} 1.0.0"));
+        // The workspace version: three numbers.
+        let parts: Vec<&str> = VERSION.split('.').collect();
+        assert_eq!(parts.len(), 3, "{VERSION}");
+        assert!(
+            parts.iter().all(|part| part.parse::<u32>().is_ok()),
+            "{VERSION}"
+        );
+        assert_eq!(version_line(), format!("{APP_NAME} {VERSION}"));
     }
 
     #[test]
