@@ -373,6 +373,9 @@ struct RustdownApp {
     /// The table the editor's right-click menu is about: where the click
     /// was (byte) and the table there.
     table_menu: Option<(usize, table_edit::Table)>,
+    /// The system fallback fonts are still to be added (after the first
+    /// frame; see `ui_style::add_fallback_fonts`).
+    fallback_fonts_pending: bool,
     /// File → Save as PDF: the PDF being made, until it is done.
     pdf_export: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
 }
@@ -427,6 +430,7 @@ impl Default for RustdownApp {
             switched_at: None,
             spell: spell::SpellCheck::default(),
             table_menu: None,
+            fallback_fonts_pending: !cfg!(test),
             pdf_export: None,
         }
     }
@@ -582,6 +586,14 @@ impl eframe::App for RustdownApp {
             .is_some_and(|startup| startup.frame(ctx))
         {
             self.startup = None;
+        }
+        // Once the window is up: the fonts for emoji, symbols and other
+        // scripts, then the documents laid out again with them.
+        if self.fallback_fonts_pending && self.startup.is_none() {
+            self.fallback_fonts_pending = false;
+            if ui_style::add_fallback_fonts(ctx) {
+                self.drop_colour_caches();
+            }
         }
         self.sync_zoom(ctx);
         self.sync_theme_caches(ctx);

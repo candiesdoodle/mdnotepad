@@ -261,16 +261,52 @@ pub fn motion() -> bool {
 /// Load fonts and configure the font families.
 ///
 /// On Windows, Segoe UI and Consolas from `%WINDIR%\Fonts` are preferred
-/// when present; the bundled fonts always follow as fallbacks.  The only
+/// when present; the bundled fonts always follow as fallbacks.  The system
+/// fallback fonts (emoji, symbols, other scripts) come later, after the
+/// first frame ([`add_fallback_fonts`]), except in tests.  The only
 /// failure path is a broken `RUSTDOWN_FONT_PATH` environment variable.
 pub fn configure_fonts(ctx: &egui::Context) -> Result<(), String> {
     let env_override = load_env_font_override()?;
-    let fonts = font_definitions(system_fonts_dir().as_deref(), env_override);
+    let fonts = build_fonts(system_fonts_dir().as_deref(), env_override, cfg!(test));
     if let Ok(mut stored) = FONT_DEFINITIONS.lock() {
         *stored = Some(fonts.clone());
     }
     ctx.set_fonts(fonts);
     Ok(())
+}
+
+/// Add the system fallback fonts once the window is up (they are not
+/// needed for the first frame, and reading them takes a moment): the font
+/// definitions are built again with them, keeping the Paper theme's
+/// serif headings.  `false` when there was nothing to do.  Takes effect
+/// from the next frame; cached layouts must be dropped.
+pub fn add_fallback_fonts(ctx: &egui::Context) -> bool {
+    let Ok(mut stored) = FONT_DEFINITIONS.lock() else {
+        return false;
+    };
+    let Some(old) = stored.as_ref() else {
+        return false;
+    };
+    let serif = old.families.contains_key(&heading_family());
+    let serif_data = old.font_data.get(SERIF_HEADING).cloned();
+    let env_override = load_env_font_override().ok().flatten();
+    let mut fonts = build_fonts(system_fonts_dir().as_deref(), env_override, true);
+    if serif && let Some(data) = serif_data {
+        fonts.font_data.insert(SERIF_HEADING.to_owned(), data);
+        let mut chain = vec![SERIF_HEADING.to_owned()];
+        chain.extend(
+            fonts
+                .families
+                .get(&bold_family())
+                .cloned()
+                .unwrap_or_default(),
+        );
+        fonts.families.insert(heading_family(), chain);
+    }
+    *stored = Some(fonts.clone());
+    drop(stored);
+    ctx.set_fonts(fonts);
+    true
 }
 
 /// `%WINDIR%\Fonts` on Windows; `None` elsewhere (no system UI fonts to
@@ -295,6 +331,15 @@ fn system_fonts_dir() -> Option<PathBuf> {
 pub(crate) fn font_definitions(
     fonts_dir: Option<&Path>,
     env_override: Option<(String, Vec<u8>)>,
+) -> egui::FontDefinitions {
+    build_fonts(fonts_dir, env_override, true)
+}
+
+/// [`font_definitions`], with the system fallback fonts or without them.
+fn build_fonts(
+    fonts_dir: Option<&Path>,
+    env_override: Option<(String, Vec<u8>)>,
+    system_fallbacks: bool,
 ) -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.clear();
@@ -371,7 +416,12 @@ pub(crate) fn font_definitions(
         proportional.push((*name).to_owned());
         monospace.push((*name).to_owned());
     }
-    for (index, path) in fallback_font_paths(fonts_dir).iter().enumerate() {
+    let fallbacks = if system_fallbacks {
+        fallback_font_paths(fonts_dir)
+    } else {
+        Vec::new()
+    };
+    for (index, path) in fallbacks.iter().enumerate() {
         let Ok(data) = fs::read(path) else {
             continue;
         };

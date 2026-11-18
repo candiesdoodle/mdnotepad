@@ -7,6 +7,9 @@ use crate::md::style::MarkdownStyle;
 /// Inline code relative to the text around it (see
 /// `ui_style::MONOSPACE_SCALE`).
 const CODE_SPAN_SCALE: f32 = crate::ui_style::MONOSPACE_SCALE;
+/// Room on each side of an inline code span, so its background does not
+/// touch the text around it (a comma before it, say).
+const CODE_SPAN_GAP: f32 = 2.0;
 
 /// Snap `pos` to a valid UTF-8 char boundary in `text`, rounding down.
 /// If `pos` is already on a boundary (or at 0 / `text.len()`), returns it unchanged.
@@ -313,6 +316,7 @@ pub(super) fn build_layout_job(
     };
     let is_ascii = effective_is_ascii(st);
     let bold = bold_family(ui);
+    let mut after_code = false;
 
     for span in spans {
         let Some(range) = span_byte_range(&st.text, span, is_ascii) else {
@@ -336,8 +340,15 @@ pub(super) fn build_layout_job(
                 egui::Stroke::NONE
             }
         };
+        let code = span.style.code();
+        let leading_space = if code || after_code {
+            CODE_SPAN_GAP
+        } else {
+            0.0
+        };
+        after_code = code;
         job.sections.push(egui::text::LayoutSection {
-            leading_space: 0.0,
+            leading_space,
             byte_range: range,
             format: egui::TextFormat {
                 font_id: egui::FontId::new(span_size, sf.font_family),
