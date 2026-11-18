@@ -1,0 +1,9 @@
+MdNotePad, portable
+
+While this file is next to MdNotePad.exe, MdNotePad keeps its settings,
+open tabs and crash log in the "data" folder next to it, and changes nothing
+in your user profile. Delete this file to keep them in your profile instead.
+
+The portable version has no File Explorer preview pane: that needs the
+installer. Settings > "Make MdNotePad the default for .md and .txt files"
+still works, and writes to the registry.

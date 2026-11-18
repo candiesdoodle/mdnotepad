@@ -1,0 +1,16 @@
+/target
+**/target
+**/*.rs.bk
+.DS_Store
+.pii-blocklist
+rust_out
+# Merge sidecar files created by the app or tests (app id: mdnotepad,
+# formerly rustdown)
+**/*.mdnotepad-merge*
+**/*.rustdown-merge*
+# Temp files from atomic writes
+**/.mdnotepad-tmp-*
+**/.mdnotepad-backup-*
+**/.rustdown-tmp-*
+**/.rustdown-backup-*
+/dist

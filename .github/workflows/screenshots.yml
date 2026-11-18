@@ -1,0 +1,321 @@
+name: Screenshots
+
+# Screenshots of the window chrome, of the modes (Edit, Raw, Split) and of
+# the text sizes on real Windows fonts (Segoe UI Variable, Consolas, Segoe
+# Fluent Icons), plus a report of
+# the Segoe fonts, the text fonts' x-heights and the icon glyphs the app
+# uses.  Software OpenGL comes from Mesa (llvmpipe).
+on:
+  push:
+    branches: ["ui-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs (Windows runner minutes).
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MESA_VERSION: "26.2.4"
+  FONTTOOLS_VERSION: "4.66.1"
+
+jobs:
+  screenshots:
+    name: Windows chrome screenshots
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.94.1"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build debug exe
+        run: cargo build -p rustdown-app --locked
+
+      - name: Font report
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          Get-ChildItem "$env:WINDIR\Fonts" -Filter 'seg*' |
+            Sort-Object Name | Format-Table Name, Length -AutoSize |
+            Out-String -Width 200 | Tee-Object -FilePath shots\fonts.txt
+          python -m pip install --disable-pip-version-check --quiet "fonttools==$env:FONTTOOLS_VERSION"
+          $report = @'
+          import os
+          from fontTools.pens.boundsPen import BoundsPen
+          from fontTools.ttLib import TTFont
+
+          fonts = os.path.join(os.environ["WINDIR"], "Fonts")
+          icons = {
+              "ChromeMinimize": 0xE921, "ChromeMaximize": 0xE922,
+              "ChromeRestore": 0xE923, "ChromeClose": 0xE8BB,
+              "Cancel": 0xE711, "Add": 0xE710, "ChevronDown": 0xE70D,
+              "ChevronDownSmall": 0xE96E, "Bold": 0xE8DD, "Italic": 0xE8DB,
+              "Strikethrough": 0xEDE0, "Code": 0xE943, "Link": 0xE71B,
+              "BulletedList": 0xE8FD, "Settings": 0xE713,
+          }
+          for name in ["SegoeIcons.ttf", "segmdl2.ttf"]:
+              path = os.path.join(fonts, name)
+              if not os.path.exists(path):
+                  print(f"{name}: not installed")
+                  continue
+              font = TTFont(path)
+              upm = font["head"].unitsPerEm
+              hhea, os2 = font["hhea"], font["OS/2"]
+              print(f"{name}: upm={upm} hhea={hhea.ascent}/{hhea.descent}/{hhea.lineGap}"
+                    f" win={os2.usWinAscent}/{os2.usWinDescent}")
+              cmap, glyphs = font.getBestCmap(), font.getGlyphSet()
+              for icon, cp in icons.items():
+                  glyph = cmap.get(cp)
+                  if glyph is None:
+                      print(f"  U+{cp:04X} {icon}: MISSING")
+                      continue
+                  pen = BoundsPen(glyphs)
+                  glyphs[glyph].draw(pen)
+                  x0, y0, x1, y1 = (v / upm for v in pen.bounds)
+                  print(f"  U+{cp:04X} {icon}: ink x {x0:.3f}..{x1:.3f} y {y0:.3f}..{y1:.3f} em"
+                        f" (w {x1 - x0:.3f}, h {y1 - y0:.3f})")
+
+          # Text fonts: x-height and cap height (ink of "x" and "H", in em),
+          # for the size of monospace (code) next to proportional text.
+          def text_metrics(path):
+              name = os.path.basename(path)
+              if not os.path.exists(path):
+                  print(f"{name}: not installed")
+                  return None
+              font = TTFont(path)
+              upm = font["head"].unitsPerEm
+              hhea, os2 = font["hhea"], font["OS/2"]
+              cmap, glyphs = font.getBestCmap(), font.getGlyphSet()
+              def ink_top(ch):
+                  pen = BoundsPen(glyphs)
+                  glyphs[cmap[ord(ch)]].draw(pen)
+                  return pen.bounds[3] / upm
+              x_height, cap_height = ink_top("x"), ink_top("H")
+              advance = font["hmtx"][cmap[ord("x")]][0] / upm
+              print(f"{name}: upm={upm} hhea={hhea.ascent}/{hhea.descent}/{hhea.lineGap}"
+                    f" typo={os2.sTypoAscender}/{os2.sTypoDescender}/{os2.sTypoLineGap}"
+                    f" use_typo={bool(os2.fsSelection & 0x80)}"
+                    f" sxHeight={getattr(os2, 'sxHeight', None)} sCapHeight={getattr(os2, 'sCapHeight', None)}"
+                    f" ink x-height={x_height:.4f} cap={cap_height:.4f} em, advance(x)={advance:.4f} em")
+              return x_height, cap_height
+          for mono_path, prop_paths in [
+              (os.path.join(fonts, "consola.ttf"),
+               [os.path.join(fonts, "SegUIVar.ttf"), os.path.join(fonts, "segoeui.ttf")]),
+              (os.path.join("assets", "fonts", "SourceCodePro-Regular.ttf"),
+               [os.path.join("assets", "fonts", "SourceSans3-Regular.ttf")]),
+          ]:
+              mono = text_metrics(mono_path)
+              for prop_path in prop_paths:
+                  prop = text_metrics(prop_path)
+                  if mono and prop:
+                      print(f"  monospace scale for {os.path.basename(mono_path)} next to"
+                            f" {os.path.basename(prop_path)}: x-height {prop[0] / mono[0]:.4f},"
+                            f" cap height {prop[1] / mono[1]:.4f}")
+
+          path = os.path.join(fonts, "SegUIVar.ttf")
+          if os.path.exists(path):
+              font = TTFont(path)
+              names = font["name"]
+              for axis in font["fvar"].axes:
+                  print(f"SegUIVar.ttf axis {axis.axisTag}: {axis.minValue}..{axis.maxValue}"
+                        f" default {axis.defaultValue}")
+              for inst in font["fvar"].instances:
+                  print(f"  instance {names.getDebugName(inst.subfamilyNameID)}: {inst.coordinates}")
+          else:
+              print("SegUIVar.ttf: not installed")
+          '@
+          $script = Join-Path $env:RUNNER_TEMP 'font_report.py'
+          Set-Content -Path $script -Value $report
+          python $script | Tee-Object -FilePath shots\fonts.txt -Append
+
+      - name: Software OpenGL (Mesa llvmpipe)
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          7z x $archive "-o$env:RUNNER_TEMP\mesa" -y | Out-Null
+          foreach ($dll in 'opengl32.dll', 'libgallium_wgl.dll', 'libglapi.dll') {
+            $path = Join-Path "$env:RUNNER_TEMP\mesa\x64" $dll
+            if (Test-Path $path) { Copy-Item $path target\debug\; "copied $dll" }
+          }
+
+      - name: Screenshots
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          "screen: $($bounds.Width) x $($bounds.Height)"
+          $exe = Resolve-Path target\debug\MdNotePad.exe
+          $docs = Join-Path $env:RUNNER_TEMP 'docs'
+          New-Item -ItemType Directory -Force $docs | Out-Null
+          Copy-Item AGENTS.md, README.md $docs
+          Copy-Item README.md (Join-Path $docs 'a-rather-long-document-name-for-the-tab-title.md')
+          # Settings live in the roaming AppData known folder (the runner's
+          # profile is thrown away with the VM).
+          $settings = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'mdnotepad'
+          New-Item -ItemType Directory -Force $settings | Out-Null
+          # Windows 10 fonts only: Segoe UI and Segoe MDL2 Assets.
+          $win10 = Join-Path $env:RUNNER_TEMP 'win10'
+          New-Item -ItemType Directory -Force "$win10\Fonts" | Out-Null
+          foreach ($font in 'segoeui.ttf', 'segoeuib.ttf', 'consola.ttf', 'segmdl2.ttf', 'seguisym.ttf', 'seguiemj.ttf') {
+            Copy-Item "$env:WINDIR\Fonts\$font" "$win10\Fonts\" -ErrorAction SilentlyContinue
+          }
+
+          function Capture([string]$path) {
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+            $graphics.Dispose()
+            $bitmap.Dispose()
+          }
+
+          # `-e` opens the files in Edit (the formatted editor), so the
+          # formatting controls are enabled (files open in Preview by default).
+          function Shot([string]$name, [string]$theme, [string[]]$files, [string]$windir) {
+            Set-Content -Path (Join-Path $settings 'settings.toml') -Value "mode = `"edit`"`ntheme = `"$theme`""
+            $saved = $env:WINDIR
+            if ($windir) { $env:WINDIR = $windir }
+            $env:APPDATA_SAVED = $env:APPDATA
+            $env:APPDATA = Join-Path $env:RUNNER_TEMP "appdata-$name"
+            $paths = @('-e') + ($files | ForEach-Object { '"' + (Join-Path $docs $_) + '"' })
+            $process = Start-Process -FilePath $exe -ArgumentList $paths -PassThru `
+              -RedirectStandardError "shots\$name.stderr.txt" -RedirectStandardOutput "shots\$name.stdout.txt"
+            $env:WINDIR = $saved
+            $env:APPDATA = $env:APPDATA_SAVED
+            Start-Sleep -Seconds 20
+            Capture "shots\$name.png"
+            "$name exited: $($process.HasExited)"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+          }
+
+          Shot 'light-win11' 'light' @('AGENTS.md') $null
+          Shot 'light-win10-fonts' 'light' @('AGENTS.md') $win10
+          Shot 'dark-tabs' 'dark' @('AGENTS.md', 'README.md', 'a-rather-long-document-name-for-the-tab-title.md') $null
+
+          # Text sizes and modes: a document with every heading level, body
+          # text and code in Edit (formatted), Raw (plain text) and Split
+          # (raw | preview), with its folder in the explorer.  "HHHH xxxx"
+          # runs give cap and x-heights to measure in the menu row, the
+          # tree, the text and the code.
+          $sizes = Join-Path $env:RUNNER_TEMP 'sizes'
+          New-Item -ItemType Directory -Force $sizes | Out-Null
+          Copy-Item test-assets\text-sizes.md $sizes
+          Copy-Item test-assets\preview-sample.md $sizes
+          Set-Content -Path (Join-Path $sizes 'HHHH xxxx.md') -Value '# HHHH xxxx'
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Win32Input {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int width, int height, bool repaint);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+          }
+          "@
+          function SizesShot([string]$name, [string]$mode, [string]$extra, [switch]$gear, [string]$doc = 'text-sizes.md', [string]$theme = 'light') {
+            Set-Content -Path (Join-Path $settings 'settings.toml') -Value "mode = `"edit`"`ntheme = `"$theme`"`n$extra"
+            $env:APPDATA_SAVED = $env:APPDATA
+            $env:APPDATA = Join-Path $env:RUNNER_TEMP "appdata-$name"
+            $paths = @($mode, ('"' + (Join-Path $sizes $doc) + '"'), ('"' + $sizes + '"'))
+            $process = Start-Process -FilePath $exe -ArgumentList $paths -PassThru `
+              -RedirectStandardError "shots\$name.stderr.txt" -RedirectStandardOutput "shots\$name.stdout.txt"
+            $env:APPDATA = $env:APPDATA_SAVED
+            Start-Sleep -Seconds 20
+            # The whole window on screen, above the taskbar.
+            $process.Refresh()
+            [void][Win32Input]::MoveWindow($process.MainWindowHandle, 0, 0, $bounds.Width, $bounds.Height - 48, $true)
+            Start-Sleep -Seconds 3
+            $rect = New-Object Win32Input+RECT
+            [void][Win32Input]::GetWindowRect($process.MainWindowHandle, [ref]$rect)
+            "${name} window: $($rect.Left),$($rect.Top) .. $($rect.Right),$($rect.Bottom)"
+            if ($gear) {
+              # The settings gear: 25 px in from the right, row 2's centre.
+              [void][Win32Input]::SetCursorPos($rect.Right - 25, $rect.Top + 59)
+              Start-Sleep -Milliseconds 300
+              [Win32Input]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero)
+              [Win32Input]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
+              Start-Sleep -Seconds 3
+            }
+            Capture "shots\$name.png"
+            "$name exited: $($process.HasExited)"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+          }
+
+          SizesShot 'mode-edit' '-e' ''
+          SizesShot 'mode-raw' '-r' ''
+          SizesShot 'mode-split' '-s' ''
+          SizesShot 'mode-edit-zoom150' '-e' 'zoom_factor = 1.5'
+          SizesShot 'gear-zoom' '-e' 'zoom_factor = 1.2' -gear
+          # Preview typography: a table, code blocks, a quote and lists.
+          SizesShot 'preview-light' '-p' '' -doc 'preview-sample.md'
+          SizesShot 'preview-dark' '-p' '' -doc 'preview-sample.md' -theme 'dark'
+          # Themes and the outline panel.
+          SizesShot 'preview-paper' '-p' '' -doc 'preview-sample.md' -theme 'paper'
+          SizesShot 'preview-neon' '-p' '' -doc 'preview-sample.md' -theme 'neon'
+          SizesShot 'edit-paper' '-e' '' -theme 'paper'
+          SizesShot 'outline' '-p' 'nav_visible = true' -doc 'preview-sample.md'
+
+          # README screenshots (docs/screenshots): the showcase document in
+          # Edit, Preview and Split, in the Light, Dark and Paper themes; one
+          # tab, the window only.  Diagrams take Edge a few seconds.
+          $showcase = Join-Path $env:RUNNER_TEMP 'showcase'
+          New-Item -ItemType Directory -Force $showcase | Out-Null
+          Copy-Item docs\showcase.md $showcase
+          New-Item -ItemType Directory -Force shots\readme | Out-Null
+          function ReadmeShot([string]$name, [string]$mode, [string]$theme) {
+            Set-Content -Path (Join-Path $settings 'settings.toml') -Value "theme = `"$theme`""
+            Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA 'mdnotepad\session') -ErrorAction SilentlyContinue
+            # The pointer away from the window (no hover, no tooltip).
+            [void][Win32Input]::SetCursorPos($bounds.Width - 1, $bounds.Height - 1)
+            $paths = @($mode, ('"' + (Join-Path $showcase 'showcase.md') + '"'))
+            $process = Start-Process -FilePath $exe -ArgumentList $paths -PassThru `
+              -RedirectStandardError "shots\readme-$name.stderr.txt" -RedirectStandardOutput "shots\readme-$name.stdout.txt"
+            Start-Sleep -Seconds 25
+            $process.Refresh()
+            [void][Win32Input]::MoveWindow($process.MainWindowHandle, 0, 0, $bounds.Width, $bounds.Height - 48, $true)
+            Start-Sleep -Seconds 4
+            $rect = New-Object Win32Input+RECT
+            [void][Win32Input]::GetWindowRect($process.MainWindowHandle, [ref]$rect)
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            $bitmap = New-Object System.Drawing.Bitmap $width, $height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+            $bitmap.Save("shots\readme\$name.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $graphics.Dispose()
+            $bitmap.Dispose()
+            "readme $name window: ${width}x${height}"
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+          }
+          foreach ($theme in 'light', 'dark', 'paper') {
+            ReadmeShot "edit-$theme" '-e' $theme
+            ReadmeShot "preview-$theme" '-p' $theme
+          }
+          ReadmeShot 'split-light' '-s' 'light'
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mdnotepad-screenshots
+          path: shots/
+          if-no-files-found: warn
+          retention-days: 14

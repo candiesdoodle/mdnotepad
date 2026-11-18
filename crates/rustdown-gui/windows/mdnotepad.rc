@@ -1,0 +1,43 @@
+// Icon and version info embedded into MdNotePad.exe by build.rs (Windows
+// targets only).  The RUSTDOWN_VERSION* macros come from build.rs.
+// Numeric constants instead of <winver.h> so no SDK headers are needed.
+// The version string is stringized here because windres runs its
+// preprocessor through a shell, which would strip quotes from a -D value.
+#define RUSTDOWN_STR2(x) #x
+#define RUSTDOWN_STR(x) RUSTDOWN_STR2(x)
+
+// The first icon is what Explorer shows for MdNotePad.exe and, through the
+// registered DefaultIcon ("MdNotePad.exe,0"), for .md files; the window
+// loads it too (win_ffi::set_window_icons_from_exe).  16-256 px, made by
+// tools/build-icon.sh.  The names below match src/app_identity.rs
+// (APP_NAME, EXE_NAME).
+1 ICON "mdnotepad.ico"
+
+1 VERSIONINFO
+FILEVERSION RUSTDOWN_VERSION_MAJOR, RUSTDOWN_VERSION_MINOR, RUSTDOWN_VERSION_PATCH, 0
+PRODUCTVERSION RUSTDOWN_VERSION_MAJOR, RUSTDOWN_VERSION_MINOR, RUSTDOWN_VERSION_PATCH, 0
+FILEFLAGSMASK 0x3F
+FILEFLAGS 0x0
+FILEOS 0x40004
+FILETYPE 0x1
+FILESUBTYPE 0x0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "candiesdoodle"
+            VALUE "FileDescription", "MdNotePad"
+            VALUE "FileVersion", RUSTDOWN_STR(RUSTDOWN_VERSION)
+            VALUE "InternalName", "MdNotePad"
+            VALUE "LegalCopyright", "Copyright (c) 2026 candiesdoodle. Based on rustdown, Copyright (c) 2026 teh-hippo. MIT License."
+            VALUE "OriginalFilename", "MdNotePad.exe"
+            VALUE "ProductName", "MdNotePad"
+            VALUE "ProductVersion", RUSTDOWN_STR(RUSTDOWN_VERSION)
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

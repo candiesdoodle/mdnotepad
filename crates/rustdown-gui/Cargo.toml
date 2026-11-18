@@ -1,0 +1,81 @@
+[package]
+name = "rustdown-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "A native markdown editor with live preview, built with egui"
+keywords = ["markdown", "editor", "egui", "preview"]
+categories = ["text-editors", "gui"]
+
+# The exe is named after the app (`app_identity::APP_NAME`): MdNotePad.exe.
+[[bin]]
+name = "MdNotePad"
+path = "src/main.rs"
+
+# File Explorer's preview pane for .md files: mdnotepad_preview.dll, shipped
+# next to the exe (`src/preview_dll`, Windows only).
+[lib]
+name = "mdnotepad_preview"
+path = "src/preview_dll/lib.rs"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+eframe = { version = "0.33", default-features = false, features = [
+  "glow",
+] }
+egui = { version = "0.33", default-features = false }
+egui_extras = { version = "0.33", default-features = false, features = ["file", "image"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+memchr = "2"
+rfd = { version = "0.17", default-features = false }
+imara-diff = { version = "0.2.0", default-features = false }
+notify = { version = "8.0.0", default-features = false }
+dirs = "6"
+toml = { version = ">=0.8, <2", default-features = false, features = ["parse", "display", "std", "serde"] }
+serde = { version = "1", default-features = false, features = ["derive"] }
+# Pasted clipboard images are saved as PNG (already used by egui_extras).
+png = "0.18"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.33", default-features = false, features = [
+  "glow",
+  "wayland",
+  "x11",
+] }
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
+
+[build-dependencies]
+# Embeds the icon and version info into MdNotePad.exe (Windows targets only).
+embed-resource = "3"
+
+[target.'cfg(windows)'.dependencies]
+# Shell integration: file association (registry) and single instance (named pipe);
+# DWM styling of the frameless window (rounded corners, shadow); the
+# window icon from the exe's icon resource.
+raw-window-handle = "0.6"
+winreg = "0.56"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Pipes",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Controls",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }

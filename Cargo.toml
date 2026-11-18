@@ -1,0 +1,57 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/rustdown-gui",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/candiesdoodle/mdnotepad"
+rust-version = "1.93"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+panic = "deny"
+# Pedantic/nursery allows for intentional patterns
+too_many_lines = "allow"
+module_name_repetitions = "allow"
+redundant_pub_crate = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+items_after_statements = "allow"
+option_if_let_else = "allow"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = 3
+codegen-units = 1
+panic = "abort"
+
+# Optimize heavy dependencies for size — these are not
+# performance-critical for our app (image decoding, clipboard, windowing).
+[profile.release.package."*"]
+opt-level = "z"
+
+# Everyday CI builds (one per push): no LTO and parallel codegen, so the exe
+# is ready in about half the time. Same behaviour; tagged releases still use
+# [profile.release].
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+opt-level = 2

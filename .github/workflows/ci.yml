@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs (Windows runner minutes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows build and test
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.94.1"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          # Separate cache for the quick `ci` profile's target/ci output.
+          key: profile-ci
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Build exe (quick profile)
+        run: cargo build --profile ci -p rustdown-app --locked
+
+      - name: Upload exe
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mdnotepad-windows-x86_64
+          path: |
+            target/ci/MdNotePad.exe
+            target/ci/mdnotepad_preview.dll
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Package (installer and portable zip)
+        shell: pwsh
+        run: installer\package.ps1 -SourceDir target\ci -OutDir dist
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mdnotepad-packages
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      # After the upload, so a failing check still leaves the exe to try.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
