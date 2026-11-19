@@ -91,3 +91,4 @@ jobs:
           winget validate --manifest $dir
           # -1978335192 is "validation succeeded with warnings".
           if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335192) { throw "winget validate failed with exit code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0

@@ -92,7 +92,7 @@ jobs:
           function Mark([string]$what) { Add-Content out\marks.txt ("{0:F1} {1}" -f $marks.Elapsed.TotalSeconds, $what) }
 
           # Characters SendKeys treats as commands, typed literally.
-          function Type([string]$text, [int]$delay = 55) {
+          function TypeText([string]$text, [int]$delay = 55) {
             foreach ($c in $text.ToCharArray()) {
               $key = if ('+^%~(){}[]'.Contains($c)) { "{$c}" } elseif ($c -eq "`n") { '{ENTER}' } else { "$c" }
               [System.Windows.Forms.SendKeys]::SendWait($key)
@@ -105,22 +105,22 @@ jobs:
           }
 
           Mark 'heading'
-          Type "# Weekend trip`n"
+          TypeText "# Weekend trip`n"
           Start-Sleep -Milliseconds 600
           Mark 'paragraph'
-          Type "Pack **light** and leave *early*.`n`n"
+          TypeText "Pack **light** and leave *early*.`n`n"
           Start-Sleep -Milliseconds 600
           Mark 'tasks'
-          Type "- [ ] Passport`nTickets`nCharger`n`n"
+          TypeText "- [ ] Passport`nTickets`nCharger`n`n"
           Start-Sleep -Milliseconds 600
           Mark 'table'
           Keys '^+g' 800
-          Type 'Day'; Keys '{TAB}'
-          Type 'City'; Keys '{TAB}'
-          Type 'Saturday'; Keys '{TAB}'
-          Type 'Rome'; Keys '{TAB}'
-          Type 'Sunday'; Keys '{TAB}'
-          Type 'Florence'
+          TypeText 'Day'; Keys '{TAB}'
+          TypeText 'City'; Keys '{TAB}'
+          TypeText 'Saturday'; Keys '{TAB}'
+          TypeText 'Rome'; Keys '{TAB}'
+          TypeText 'Sunday'; Keys '{TAB}'
+          TypeText 'Florence'
           Keys '^{END}' 600
           Mark 'diagram'
           Set-Clipboard -Value "`n``````mermaid`nflowchart LR`n  Rome --> Florence --> Venice`n```````n"
