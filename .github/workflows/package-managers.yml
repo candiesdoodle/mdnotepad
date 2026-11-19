@@ -1,0 +1,93 @@
+name: Package manager test
+
+# Manual only.  Installs bucket/mdnotepad.json with Scoop, and validates the
+# winget manifest of one version (read from the submission branch of the
+# winget-pkgs fork) after a silent install and uninstall with the setup
+# program.  (winget install itself cannot be tested on a runner: Windows does
+# not start an unsigned installer that winget downloaded.)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version whose winget manifest to test (for example 1.0.1)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  scoop:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Install with Scoop
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          Invoke-RestMethod -Uri https://get.scoop.sh -OutFile install-scoop.ps1
+          ./install-scoop.ps1 -RunAsAdmin
+          $env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+          scoop install "$env:GITHUB_WORKSPACE\bucket\mdnotepad.json"
+          $dir = "$env:USERPROFILE\scoop\apps\mdnotepad\current"
+          Get-ChildItem $dir | Format-Table Name, Length
+          if (-not (Test-Path "$dir\MdNotePad.exe")) { throw "MdNotePad.exe is missing after the install" }
+          if (-not (Test-Path "$dir\portable.txt")) { throw "portable.txt is missing (settings would not go to data)" }
+          if (-not (Test-Path "$dir\data")) { throw "the persisted data folder is missing" }
+          $v = (Get-Item "$dir\MdNotePad.exe").VersionInfo.ProductVersion
+          Write-Host "installed version: $v"
+          $want = (Get-Content "$env:GITHUB_WORKSPACE\bucket\mdnotepad.json" | ConvertFrom-Json).version
+          if ($v -notlike "$want*") { throw "version $v does not match the manifest ($want)" }
+          $out = & "$env:USERPROFILE\scoop\shims\mdnotepad.exe" --version 2>&1 | Out-String
+          Write-Host "mdnotepad --version: $out"
+          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Scoop Apps\MdNotePad.lnk"
+          if (-not (Test-Path $lnk)) { throw "the Start menu shortcut is missing" }
+          scoop uninstall mdnotepad
+          if (Test-Path "$dir\MdNotePad.exe") { throw "MdNotePad.exe is still there after the uninstall" }
+
+  winget:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Silent install and uninstall with the setup program
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP "setup.exe"
+          Invoke-WebRequest -Uri "https://github.com/candiesdoodle/mdnotepad/releases/download/v$env:VERSION/MdNotePad-$($env:VERSION)-setup.exe" -OutFile $setup
+          $p = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -PassThru
+          if (-not $p.WaitForExit(150000)) { Stop-Process -Id $p.Id -Force; throw "the setup program hangs in silent mode" }
+          Write-Host "setup exit code: $($p.ExitCode)"
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{B9E5A4C2-6F1D-4E8A-9C3B-2D7F1E0A5B64}_is1"
+          $entry = Get-ItemProperty $key
+          Write-Host "ARP: $($entry.DisplayName) | $($entry.Publisher) | $($entry.DisplayVersion) | $($entry.InstallLocation)"
+          if ($entry.DisplayVersion -ne $env:VERSION) { throw "ARP version $($entry.DisplayVersion) is not $env:VERSION" }
+          $exe = Join-Path $entry.InstallLocation "MdNotePad.exe"
+          if (-not (Test-Path $exe)) { throw "MdNotePad.exe is missing after the install" }
+          $u = Start-Process -FilePath ($entry.UninstallString -replace '"', '') -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -PassThru
+          $u.WaitForExit(90000) | Out-Null
+          Start-Sleep 5
+          if (Test-Path $exe) { throw "MdNotePad.exe is still there after the uninstall" }
+      - name: Validate the manifest
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+            Start-Sleep -Seconds 5
+          }
+          winget --version
+          $dir = Join-Path $env:RUNNER_TEMP "manifest"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $base = "https://raw.githubusercontent.com/candiesdoodle/winget-pkgs/candiesdoodle.MdNotePad-$env:VERSION/manifests/c/candiesdoodle/MdNotePad/$env:VERSION"
+          foreach ($f in "candiesdoodle.MdNotePad.installer.yaml", "candiesdoodle.MdNotePad.locale.en-US.yaml", "candiesdoodle.MdNotePad.yaml") {
+            Invoke-WebRequest -Uri "$base/$f" -OutFile (Join-Path $dir $f)
+          }
+          winget validate --manifest $dir
+          # -1978335192 is "validation succeeded with warnings".
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335192) { throw "winget validate failed with exit code $LASTEXITCODE" }

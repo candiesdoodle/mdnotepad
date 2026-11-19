@@ -1,0 +1,150 @@
+name: Demo recording
+
+# A screen recording for the README's animation: the released portable exe
+# on a Windows runner, typing a short note in Edit (heading, emphasis, a
+# task list, a table, a Mermaid diagram), then Ctrl+Enter through the modes.
+# The recording (lossless) is uploaded; the GIF is made from it elsewhere.
+on:
+  push:
+    branches: ["demo-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MESA_VERSION: "26.2.4"
+  APP_VERSION: "1.0.1"
+
+jobs:
+  record:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Released exe, Mesa and ffmpeg
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'app'
+          $zip = Join-Path $env:RUNNER_TEMP 'app.zip'
+          Invoke-WebRequest -Uri "https://github.com/candiesdoodle/mdnotepad/releases/download/v$env:APP_VERSION/MdNotePad-$env:APP_VERSION-portable.zip" -OutFile $zip
+          Expand-Archive $zip $app
+          # Not portable: settings from AppData, written below.
+          Remove-Item (Join-Path $app 'portable.txt')
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z" -OutFile $archive
+          7z x $archive "-o$env:RUNNER_TEMP\mesa" -y | Out-Null
+          foreach ($dll in 'opengl32.dll', 'libgallium_wgl.dll', 'libglapi.dll') {
+            $path = Join-Path "$env:RUNNER_TEMP\mesa\x64" $dll
+            if (Test-Path $path) { Copy-Item $path $app }
+          }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg --no-progress -y | Out-Null }
+          ffmpeg -version | Select-Object -First 1
+
+      - name: Record
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Win32Input {
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int width, int height, bool repaint);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+          }
+          "@
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          "screen: $($bounds.Width) x $($bounds.Height)"
+          New-Item -ItemType Directory -Force out | Out-Null
+          $settings = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'mdnotepad'
+          New-Item -ItemType Directory -Force $settings | Out-Null
+          Set-Content -Path (Join-Path $settings 'settings.toml') -Value "mode = `"edit`"`ntheme = `"light`""
+          $docs = Join-Path $env:RUNNER_TEMP 'docs'
+          New-Item -ItemType Directory -Force $docs | Out-Null
+          $note = Join-Path $docs 'Weekend trip.md'
+          Set-Content -Path $note -Value '' -NoNewline
+          $exe = Join-Path $env:RUNNER_TEMP 'app\MdNotePad.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '-e', "`"$note`"" -PassThru `
+            -RedirectStandardError out\stderr.txt -RedirectStandardOutput out\stdout.txt
+          Start-Sleep -Seconds 20
+          $process.Refresh()
+          $height = $bounds.Height - 48
+          [void][Win32Input]::MoveWindow($process.MainWindowHandle, 0, 0, $bounds.Width, $height, $true)
+          [void][Win32Input]::SetForegroundWindow($process.MainWindowHandle)
+          Start-Sleep -Seconds 3
+          # Focus the editor, then the pointer out of sight.
+          [void][Win32Input]::SetCursorPos(400, 200)
+          [Win32Input]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero)
+          [Win32Input]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
+          Start-Sleep -Milliseconds 500
+          [void][Win32Input]::SetCursorPos($bounds.Width - 1, $bounds.Height - 1)
+          Start-Sleep -Seconds 1
+
+          $recorder = Start-Process -FilePath ffmpeg -PassThru -NoNewWindow -RedirectStandardError out\ffmpeg.txt -ArgumentList `
+            '-f', 'gdigrab', '-framerate', '20', '-draw_mouse', '0', '-offset_x', '0', '-offset_y', '0',
+            '-video_size', "$($bounds.Width)x$height", '-i', 'desktop', '-t', '75',
+            '-c:v', 'libx264rgb', '-crf', '0', '-preset', 'ultrafast', 'out\demo.mkv'
+          Start-Sleep -Seconds 2
+          $marks = [System.Diagnostics.Stopwatch]::StartNew()
+          function Mark([string]$what) { Add-Content out\marks.txt ("{0:F1} {1}" -f $marks.Elapsed.TotalSeconds, $what) }
+
+          # Characters SendKeys treats as commands, typed literally.
+          function Type([string]$text, [int]$delay = 55) {
+            foreach ($c in $text.ToCharArray()) {
+              $key = if ('+^%~(){}[]'.Contains($c)) { "{$c}" } elseif ($c -eq "`n") { '{ENTER}' } else { "$c" }
+              [System.Windows.Forms.SendKeys]::SendWait($key)
+              Start-Sleep -Milliseconds $delay
+            }
+          }
+          function Keys([string]$keys, [int]$pause = 400) {
+            [System.Windows.Forms.SendKeys]::SendWait($keys)
+            Start-Sleep -Milliseconds $pause
+          }
+
+          Mark 'heading'
+          Type "# Weekend trip`n"
+          Start-Sleep -Milliseconds 600
+          Mark 'paragraph'
+          Type "Pack **light** and leave *early*.`n`n"
+          Start-Sleep -Milliseconds 600
+          Mark 'tasks'
+          Type "- [ ] Passport`nTickets`nCharger`n`n"
+          Start-Sleep -Milliseconds 600
+          Mark 'table'
+          Keys '^+g' 800
+          Type 'Day'; Keys '{TAB}'
+          Type 'City'; Keys '{TAB}'
+          Type 'Saturday'; Keys '{TAB}'
+          Type 'Rome'; Keys '{TAB}'
+          Type 'Sunday'; Keys '{TAB}'
+          Type 'Florence'
+          Keys '^{END}' 600
+          Mark 'diagram'
+          Set-Clipboard -Value "`n``````mermaid`nflowchart LR`n  Rome --> Florence --> Venice`n```````n"
+          Keys '^v' 500
+          Start-Sleep -Seconds 14
+          Mark 'modes'
+          foreach ($mode in 'raw', 'split', 'preview') {
+            Keys '^{ENTER}' 3000
+            Mark $mode
+          }
+          Start-Sleep -Seconds 1
+          Mark 'end'
+          # The recording ends by itself (-t); the rest is trimmed later.
+          if (-not $recorder.WaitForExit(90000)) { Stop-Process -Id $recorder.Id -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 2
+          Get-Content out\marks.txt
+          "app exited: $($process.HasExited)"
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          Get-ChildItem out | Format-Table Name, Length
+
+      - name: Upload recording
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mdnotepad-demo
+          path: out/
+          retention-days: 7
