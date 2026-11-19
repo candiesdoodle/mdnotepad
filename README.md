@@ -13,7 +13,7 @@ Native and fast: no web view, no Electron, no account, no network.
 
 <br>
 
-<img src="docs/screenshots/edit-light.png" alt="MdNotePad editing a document: headings, a task list, a table and a diagram shown formatted" width="860">
+<img src="docs/screenshots/demo.gif" alt="Typing a note in MdNotePad: a heading, emphasis, a task list, a table and a Mermaid diagram appear formatted, then the Raw, Split and Preview modes" width="860">
 
 </div>
 
@@ -68,6 +68,13 @@ Get the latest version from the [Releases page](../../releases/latest). Windows 
 | Open `.md` files with MdNotePad | A tick in the installer | Settings → *Make MdNotePad the default…* |
 | Explorer preview pane | A tick in the installer | No |
 | Settings kept in | Your user profile | A `data` folder next to the exe |
+
+Or install the portable version with [Scoop](https://scoop.sh/):
+
+```sh
+scoop bucket add mdnotepad https://github.com/candiesdoodle/mdnotepad
+scoop install mdnotepad
+```
 
 The downloads are not code-signed yet, so Windows SmartScreen may warn the first time: choose
 **More info → Run anyway**. Each release lists SHA-256 checksums.

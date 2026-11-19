@@ -41,7 +41,8 @@ This repo is **MdNotePad** (`MdNotePad.exe`), a native (non-webview) Notepad-sty
   - `src/test_harness.rs` — headless UI driver for tests (synthetic pointer input, viewport commands, painted text)
   - `build.rs` + `windows/mdnotepad.rc` — exe icon (`windows/mdnotepad.ico`) and version info (Windows targets only); the window takes the same icon (`win_ffi::set_window_icons_from_exe`)
 - `installer/` — `mdnotepad.iss` (per-user Inno Setup installer: exe + preview DLL, ticks for the file types and the preview pane, registered through `--register-file-types` / `--register-preview`), `portable.txt` (the portable zip's marker: settings, session and crash log go in `data\` next to the exe, see `app_identity::portable_dir`) and `package.ps1` (builds both, with checksums; run by CI and releases)
-- `docs/showcase.md` — the document of the README screenshots (`docs/screenshots/`, made by `screenshots.yml`)
+- `docs/showcase.md` — the document of the README screenshots (`docs/screenshots/`, made by `screenshots.yml`); `docs/screenshots/demo.gif` is cut from `demo.yml`'s recording (manual run), `social-preview.png` is the repo's GitHub social preview
+- `bucket/mdnotepad.json` — Scoop manifest (portable zip); bump its version and hash with each release. `package-managers.yml` (manual) tests it and validates the winget manifest on the winget-pkgs fork's submission branch
 - App icon: a blue (#0078D4) notepad outline. Sources in `assets/icon/`: hand-tuned, pixel-aligned `16.svg`, `24.svg`, `32.svg` and `large.svg` (48 px and up; also `assets/icon.svg`). `tools/build-icon.sh` (rsvg-convert + ImageMagick) renders `assets/icon/{16,24,32}.png` (the title bar picks the one closest to 16 px × the display scale), `assets/icon.png` (256 px) and the multi-size `windows/mdnotepad.ico`; never downscale the 256 px render for the small sizes
 
 
