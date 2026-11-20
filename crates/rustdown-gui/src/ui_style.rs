@@ -975,8 +975,10 @@ impl crate::RustdownApp {
     }
 }
 
+// A closure: the method path is not general enough for `Context::fonts`.
+#[allow(clippy::redundant_closure_for_method_calls)]
 fn font_atlas_fill(ctx: &egui::Context) -> f32 {
-    ctx.fonts(egui::epaint::text::FontsView::font_atlas_fill_ratio)
+    ctx.fonts(|fonts| fonts.font_atlas_fill_ratio())
 }
 
 fn insert_static(fonts: &mut egui::FontDefinitions, name: &str, data: &'static [u8]) {
