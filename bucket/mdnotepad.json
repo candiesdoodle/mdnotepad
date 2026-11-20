@@ -1,13 +1,13 @@
 {
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "A Notepad-style Markdown editor for Windows: formatted editing, tables, Mermaid diagrams and spell check.",
     "homepage": "https://github.com/candiesdoodle/mdnotepad",
     "license": "MIT",
     "notes": "Settings are kept in Scoop's persist folder. To open .md files with MdNotePad, use Settings > Make MdNotePad the default. The Explorer preview pane needs the installer version.",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/candiesdoodle/mdnotepad/releases/download/v1.0.2/MdNotePad-1.0.2-portable.zip",
-            "hash": "d832ad4ab73d220236931645c8f0f6ccfde4e26bef5a7c5a046f9ee4054bcb07"
+            "url": "https://github.com/candiesdoodle/mdnotepad/releases/download/v1.0.3/MdNotePad-1.0.3-portable.zip",
+            "hash": "e9837b90bc7dcba52239649ade63393af180a8f850ef65f8e9726a60a61aa3eb"
         }
     },
     "bin": "MdNotePad.exe",
