@@ -527,10 +527,52 @@ fn persisted_mode_restores_raw_and_maps_the_old_markdown_syntax_setting() {
         RustdownApp::from_launch_options_and_preferences(parse(&[]), &prefs).mode,
         Mode::Raw
     );
-    // A file on the command line still opens in Preview.
+    // A file on the command line opens in it too.
     assert_eq!(
         RustdownApp::from_launch_options_and_preferences(parse(&["missing.md"]), &prefs).mode,
-        Mode::Preview
+        Mode::Raw
+    );
+}
+
+#[test]
+fn start_in_setting_picks_the_mode_with_or_without_a_file() {
+    let launch = |prefs: &str, args: &[&str]| {
+        let prefs = crate::preferences::UserPreferences::from_toml(prefs);
+        RustdownApp::from_launch_options_and_preferences(parse(args), &prefs).mode
+    };
+    // Last used (the default): the mode last chosen.
+    assert_eq!(launch("", &[]), Mode::Edit);
+    assert_eq!(launch("", &["missing.md"]), Mode::Edit);
+    let split = "mode = \"sidebyside\"\nstart_mode = \"last\"\n";
+    assert_eq!(launch(split, &["missing.md"]), Mode::SideBySide);
+    // A fixed mode, whatever was chosen last.
+    let preview = "mode = \"raw\"\nstart_mode = \"preview\"\n";
+    assert_eq!(launch(preview, &[]), Mode::Preview);
+    assert_eq!(launch(preview, &["missing.md"]), Mode::Preview);
+    // A mode flag wins; a text file opens as plain text.
+    assert_eq!(launch(preview, &["-e", "missing.md"]), Mode::Edit);
+    assert_eq!(launch(preview, &["notes.txt"]), Mode::Raw);
+
+    // Saved: the setting, and the mode last chosen (not Raw picked for a
+    // text file).
+    let ctx = egui::Context::default();
+    let prefs = crate::preferences::UserPreferences::from_toml("mode = \"edit\"\n");
+    let mut app = RustdownApp::from_launch_options_and_preferences(parse(&["notes.txt"]), &prefs);
+    assert_eq!(app.mode, Mode::Raw);
+    assert_eq!(app.preferences().mode, "edit");
+    assert_eq!(app.preferences().start_mode, "last");
+    app.execute(AppCommand::SetStartMode(Some(Mode::Preview)), &ctx);
+    assert_eq!(app.preferences().start_mode, "preview");
+    // Choosing the mode already shown still counts.
+    app.execute(AppCommand::SetMode(Mode::Raw), &ctx);
+    assert_eq!(app.preferences().mode, "raw");
+    app.execute(AppCommand::SetStartMode(None), &ctx);
+    let saved = toml::to_string_pretty(&app.preferences()).unwrap_or_default();
+    assert!(saved.contains("start_mode = \"last\""), "{saved}");
+    let prefs = crate::preferences::UserPreferences::from_toml(&saved);
+    assert_eq!(
+        RustdownApp::from_launch_options_and_preferences(parse(&["missing.md"]), &prefs).mode,
+        Mode::Raw
     );
 }
 

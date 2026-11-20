@@ -279,6 +279,13 @@ struct RustdownApp {
     active: usize,
 
     mode: Mode,
+    /// The mode last chosen in the View menu, the status bar or with
+    /// Ctrl+Enter (persisted as `mode`): Start in → Last used starts in it.
+    /// A mode the app chose itself (Raw for a `.txt` file) is not kept.
+    chosen_mode: Mode,
+    /// Settings → Start in: the mode to start in and open Markdown files
+    /// in; `None` is Last used ([`Self::chosen_mode`]).  Persisted.
+    start_mode: Option<Mode>,
     /// Find/replace bar.  App-wide (like Notepad's): the query survives tab
     /// switches and always applies to the active tab.
     search: SearchState,
@@ -386,6 +393,8 @@ impl Default for RustdownApp {
             tabs: vec![Tab::default()],
             active: 0,
             mode: Mode::default(),
+            chosen_mode: Mode::default(),
+            start_mode: None,
             search: SearchState::default(),
             focus_search: false,
             nav_visible: false,

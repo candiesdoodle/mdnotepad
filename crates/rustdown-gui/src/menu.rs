@@ -116,6 +116,8 @@ pub(crate) const SETTINGS_DOCUMENT_ITEMS: [(&str, AppCommand); 2] = [
         AppCommand::OpenBundled(BundledDoc::Verification),
     ),
 ];
+/// Settings → Start in: the item that starts in the mode last chosen.
+const START_IN_LAST_USED: &str = "Last used mode";
 pub(crate) const SETTINGS_ABOUT_ITEM: (&str, AppCommand) =
     (crate::about::ABOUT_TITLE, AppCommand::ShowAbout);
 
@@ -646,6 +648,14 @@ impl RustdownApp {
         for theme in ThemeChoice::ALL {
             let mark = Mark::Radio(self.theme == theme);
             self.menu_entry(ui, theme.label(), mark, true, AppCommand::SetTheme(theme));
+        }
+        separator(ui);
+        // The mode to start in and open Markdown files in.
+        caption(ui, "Start in");
+        for mode in std::iter::once(None).chain(Mode::ALL.map(Some)) {
+            let label = mode.map_or(START_IN_LAST_USED, Mode::short_label);
+            let mark = Mark::Radio(self.start_mode == mode);
+            self.menu_entry(ui, label, mark, true, AppCommand::SetStartMode(mode));
         }
         separator(ui);
         self.zoom_slider(ui);
@@ -1319,6 +1329,11 @@ mod tests {
         assert_eq!(app.theme, ThemeChoice::Dark);
         assert_eq!(ui.ctx.theme(), egui::Theme::Dark);
 
+        app.start_mode = Some(Mode::Preview);
+        let _ = open(&mut ui, &mut app, gear);
+        let _ = ui.click_text(&mut app, START_IN_LAST_USED);
+        assert_eq!(app.start_mode, None);
+
         let _ = open(&mut ui, &mut app, gear);
         let _ = ui.click_text(&mut app, SETTINGS_ABOUT_ITEM.0);
         assert!(app.show_about);
@@ -1732,6 +1747,8 @@ mod tests {
         for text in [
             "Theme",
             "Dark",
+            "Start in",
+            START_IN_LAST_USED,
             "Zoom",
             "Close window with last tab",
             "Demo document",

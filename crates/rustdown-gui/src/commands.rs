@@ -68,6 +68,8 @@ pub(crate) enum AppCommand {
     // ── View ──
     SetMode(Mode),
     CycleMode,
+    /// Settings → Start in (`None`: Last used).
+    SetStartMode(Option<Mode>),
     ToggleOutline,
     ZoomIn,
     ZoomOut,
@@ -332,6 +334,10 @@ impl RustdownApp {
             }
             AppCommand::ToggleFormatToolbar => {
                 self.show_format_toolbar = !self.show_format_toolbar;
+                self.save_preferences();
+            }
+            AppCommand::SetStartMode(mode) => {
+                self.start_mode = mode;
                 self.save_preferences();
             }
             AppCommand::SetTheme(theme) => {

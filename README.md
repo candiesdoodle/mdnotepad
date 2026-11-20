@@ -31,7 +31,7 @@ Native and fast: no web view, no Electron, no account, no network.
 
 **Read and share**
 
-- **Four modes:** Edit (formatted), Raw (plain text, like Notepad), Split (raw text next to the preview) and Preview. Ctrl+Enter switches.
+- **Four modes:** Edit (formatted), Raw (plain text, like Notepad), Split (raw text next to the preview) and Preview. Ctrl+Enter switches; files open in the mode you used last, or the one set in Settings → *Start in*.
 - **Outline panel** of the headings, a **folder panel**, and **Quick open** (Ctrl+P).
 - **Print** and **Save as PDF**, diagrams included.
 - **Copy as formatted text** to paste into email or Word with the formatting kept.
@@ -101,7 +101,7 @@ Saving as PDF and drawing diagrams use Microsoft Edge (part of Windows) in the b
 ## Command line
 
 ```text
-MdNotePad [file]                 open a file (in Preview; -e, -r, -s or -p to choose the mode)
+MdNotePad [file]                 open a file (-e, -r, -s or -p: in Edit, Raw, Split or Preview)
 MdNotePad --new-window [file]    open in a new window instead of the running one
 MdNotePad --register-file-types  open .md, .markdown and .txt files with MdNotePad
 MdNotePad --register-preview     show .md files in Explorer's preview pane (needs the DLL)

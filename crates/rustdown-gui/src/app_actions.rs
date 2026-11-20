@@ -29,16 +29,22 @@ impl RustdownApp {
         // A folder argument opens it in the Explorer instead of a tab.
         let folder = options.path.take_if(|path| path.is_dir());
 
-        // Apply persisted mode only when no file is opened and no explicit
-        // CLI flag was given (e.g. the exe with no args).
-        let mode = if !options.mode_explicit && options.path.is_none() {
-            Mode::from_str_lossy(&prefs.mode).unwrap_or(options.mode)
-        } else {
+        // A mode flag on the command line wins, and a plain text file opens
+        // as plain text (Raw); otherwise Settings → Start in decides, with
+        // or without a file.
+        let chosen_mode = Mode::from_str_lossy(&prefs.mode).unwrap_or_default();
+        let start_mode = Mode::from_str_lossy(&prefs.start_mode);
+        let text_file = options.path.as_deref().is_some_and(crate::is_text_path);
+        let mode = if options.mode_explicit || text_file {
             options.mode
+        } else {
+            start_mode.unwrap_or(chosen_mode)
         };
 
         let mut app = Self {
             mode,
+            chosen_mode,
+            start_mode,
             nav_visible: prefs.nav_visible,
             heading_color_mode: prefs.heading_color_mode,
             side_by_side_scroll_sync: prefs.side_by_side_scroll_sync,
@@ -375,7 +381,12 @@ impl RustdownApp {
     // ── Mode, preferences, zoom ─────────────────────────────────────────
 
     pub(crate) fn set_mode(&mut self, mode: Mode, ctx: &egui::Context) {
+        let newly_chosen = self.chosen_mode != mode;
+        self.chosen_mode = mode;
         if self.mode == mode {
+            if newly_chosen {
+                self.save_preferences();
+            }
             return;
         }
 
@@ -454,7 +465,8 @@ impl RustdownApp {
             heading_color_mode: self.heading_color_mode,
             side_by_side_scroll_sync: self.side_by_side_scroll_sync,
             zoom_factor: self.zoom,
-            mode: self.mode.as_str().to_owned(),
+            mode: self.chosen_mode.as_str().to_owned(),
+            start_mode: self.start_mode.map_or("last", Mode::as_str).to_owned(),
             auto_save: self.auto_save,
             theme: self.theme.as_str().to_owned(),
             word_wrap: self.word_wrap,
