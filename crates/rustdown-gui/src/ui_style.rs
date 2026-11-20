@@ -278,14 +278,14 @@ pub fn configure_fonts(ctx: &egui::Context) -> Result<(), String> {
 /// Add the system fallback fonts once the window is up (they are not
 /// needed for the first frame, and reading them takes a moment): the font
 /// definitions are built again with them, keeping the Paper theme's
-/// serif headings.  `false` when there was nothing to do.  Takes effect
-/// from the next frame; cached layouts must be dropped.
-pub fn add_fallback_fonts(ctx: &egui::Context) -> bool {
+/// serif headings.  Takes effect from the next frame (egui builds its font
+/// atlas again: see `RustdownApp::sync_font_atlas`).
+pub fn add_fallback_fonts(ctx: &egui::Context) {
     let Ok(mut stored) = FONT_DEFINITIONS.lock() else {
-        return false;
+        return;
     };
     let Some(old) = stored.as_ref() else {
-        return false;
+        return;
     };
     let serif = old.families.contains_key(&heading_family());
     let serif_data = old.font_data.get(SERIF_HEADING).cloned();
@@ -306,7 +306,6 @@ pub fn add_fallback_fonts(ctx: &egui::Context) -> bool {
     *stored = Some(fonts.clone());
     drop(stored);
     ctx.set_fonts(fonts);
-    true
 }
 
 /// `%WINDIR%\Fonts` on Windows; `None` elsewhere (no system UI fonts to
@@ -956,6 +955,28 @@ impl crate::RustdownApp {
             tab.preview_style_cache.style = None;
         }
     }
+
+    /// Start of a frame.  egui builds its font atlas again when the fonts
+    /// change (the fallback fonts after the first frame, the Paper
+    /// theme's headings: a frame after `set_fonts`) or when the atlas fills
+    /// up.  The editor keeps its layout across frames, and that layout
+    /// points into the old atlas (garbled text): drop it.  The atlas only
+    /// fills otherwise, so it was built again when it is emptier than at
+    /// the end of the last frame ([`Self::note_font_atlas`]).
+    pub(crate) fn sync_font_atlas(&mut self, ctx: &egui::Context) {
+        if font_atlas_fill(ctx) < self.font_atlas_fill {
+            self.drop_colour_caches();
+        }
+    }
+
+    /// End of a frame: how full the font atlas is.
+    pub(crate) fn note_font_atlas(&mut self, ctx: &egui::Context) {
+        self.font_atlas_fill = font_atlas_fill(ctx);
+    }
+}
+
+fn font_atlas_fill(ctx: &egui::Context) -> f32 {
+    ctx.fonts(egui::epaint::text::FontsView::font_atlas_fill_ratio)
 }
 
 fn insert_static(fonts: &mut egui::FontDefinitions, name: &str, data: &'static [u8]) {
@@ -1232,6 +1253,47 @@ mod tests {
             app.tab().doc.editor_galley_cache.is_some(),
             "no change: kept"
         );
+    }
+
+    #[test]
+    fn editor_layout_is_dropped_when_the_font_atlas_is_built_again() {
+        let ctx = egui::Context::default();
+        configure_style(&ctx);
+        let mut app = crate::RustdownApp::default();
+        app.tab_mut().doc.text = Arc::new("# Title\n\nSome body text.\n".to_owned());
+        let render = |app: &mut crate::RustdownApp| {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                app.sync_font_atlas(ctx);
+                egui::CentralPanel::default().show(ctx, |ui| app.show_editor(ui));
+                app.note_font_atlas(ctx);
+            });
+        };
+        let galley = |app: &crate::RustdownApp| {
+            app.tab()
+                .doc
+                .editor_galley_cache
+                .as_ref()
+                .map(|cache| Arc::clone(&cache.galley))
+        };
+        render(&mut app);
+        let first = galley(&app);
+        assert!(first.is_some());
+        render(&mut app);
+        let same = |a: &Option<Arc<egui::Galley>>, b: &Option<Arc<egui::Galley>>| {
+            a.as_ref()
+                .zip(b.as_ref())
+                .is_some_and(|(a, b)| Arc::ptr_eq(a, b))
+        };
+        assert!(same(&first, &galley(&app)), "kept while the fonts stay");
+
+        // New fonts take effect (a new atlas) at the next frame.
+        ctx.set_fonts(font_definitions(None, None));
+        render(&mut app);
+        let after = galley(&app);
+        assert!(after.is_some());
+        assert!(!same(&first, &after), "laid out again in the new atlas");
+        render(&mut app);
+        assert!(same(&after, &galley(&app)), "then kept again");
     }
 
     #[test]
