@@ -386,9 +386,9 @@ struct RustdownApp {
     /// The system fallback fonts are still to be added (after the first
     /// frame; see `ui_style::add_fallback_fonts`).
     fallback_fonts_pending: bool,
-    /// How full egui's font atlas was at the end of the last frame (see
-    /// [`Self::sync_font_atlas`]).
-    font_atlas_fill: f32,
+    /// A tiny layout made every frame, to notice when egui builds its
+    /// font atlas again (see [`Self::sync_font_atlas`]).
+    font_probe: Option<std::sync::Arc<egui::Galley>>,
     /// File → Save as PDF: the PDF being made, until it is done.
     pdf_export: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
 }
@@ -446,7 +446,7 @@ impl Default for RustdownApp {
             spell: spell::SpellCheck::default(),
             table_menu: None,
             fallback_fonts_pending: !cfg!(test),
-            font_atlas_fill: 0.0,
+            font_probe: None,
             pdf_export: None,
         }
     }
@@ -656,7 +656,6 @@ impl eframe::App for RustdownApp {
         self.track_window_state(ctx);
         self.update_viewport_title(ctx);
         self.flush_window_close(ctx);
-        self.note_font_atlas(ctx);
     }
 
     /// Opaque, so nothing shows through where the frameless window's DWM

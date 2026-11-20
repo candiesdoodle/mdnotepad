@@ -958,27 +958,26 @@ impl crate::RustdownApp {
 
     /// Start of a frame.  egui builds its font atlas again when the fonts
     /// change (the fallback fonts after the first frame, the Paper
-    /// theme's headings: a frame after `set_fonts`) or when the atlas fills
-    /// up.  The editor keeps its layout across frames, and that layout
-    /// points into the old atlas (garbled text): drop it.  The atlas only
-    /// fills otherwise, so it was built again when it is emptier than at
-    /// the end of the last frame ([`Self::note_font_atlas`]).
+    /// theme's headings: a frame after `set_fonts`), when the atlas fills
+    /// up or the text contrast changes.  The editor keeps its layout across
+    /// frames, and that layout points into the old atlas (garbled text):
+    /// drop it then.  egui's own layout cache starts over with the atlas,
+    /// so a tiny layout made every frame comes back as a new one exactly
+    /// then (otherwise egui hands back the same one).
     pub(crate) fn sync_font_atlas(&mut self, ctx: &egui::Context) {
-        if font_atlas_fill(ctx) < self.font_atlas_fill {
+        let probe = ctx.fonts_mut(|fonts| {
+            fonts.layout_no_wrap(
+                "x".to_owned(),
+                egui::FontId::default(),
+                egui::Color32::PLACEHOLDER,
+            )
+        });
+        if let Some(last) = self.font_probe.replace(Arc::clone(&probe))
+            && !Arc::ptr_eq(&last, &probe)
+        {
             self.drop_colour_caches();
         }
     }
-
-    /// End of a frame: how full the font atlas is.
-    pub(crate) fn note_font_atlas(&mut self, ctx: &egui::Context) {
-        self.font_atlas_fill = font_atlas_fill(ctx);
-    }
-}
-
-// A closure: the method path is not general enough for `Context::fonts`.
-#[allow(clippy::redundant_closure_for_method_calls)]
-fn font_atlas_fill(ctx: &egui::Context) -> f32 {
-    ctx.fonts(|fonts| fonts.font_atlas_fill_ratio())
 }
 
 fn insert_static(fonts: &mut egui::FontDefinitions, name: &str, data: &'static [u8]) {
@@ -1267,7 +1266,6 @@ mod tests {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
                 app.sync_font_atlas(ctx);
                 egui::CentralPanel::default().show(ctx, |ui| app.show_editor(ui));
-                app.note_font_atlas(ctx);
             });
         };
         let galley = |app: &crate::RustdownApp| {
