@@ -1679,7 +1679,7 @@ fn open_path_reuses_untouched_tab_and_focuses_already_open_file() {
     assert_eq!(app.tab().doc.text.as_str(), "# A\n");
 
     // A second file gets its own tab.
-    app.open_path(b);
+    app.open_path(b.clone());
     assert_eq!(app.tabs.len(), 2);
     assert_eq!(app.active, 1);
 
