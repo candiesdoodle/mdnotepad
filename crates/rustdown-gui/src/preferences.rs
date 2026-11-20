@@ -23,9 +23,11 @@ pub struct UserPreferences {
     pub zoom_factor: f32,
     /// The mode last chosen (View menu, status bar, Ctrl+Enter).
     pub mode: String,
-    /// Settings → Start in: the mode to start in and open Markdown files
-    /// in, or `"last"` (also when empty or unknown) for [`Self::mode`].
-    pub start_mode: String,
+    /// Settings → New files open in: the mode of a newly opened file or a
+    /// new tab, or `"last"` (also when empty or unknown) for [`Self::mode`].
+    /// (Tabs brought back from the last session keep their own modes.)
+    #[serde(alias = "start_mode")]
+    pub new_files_mode: String,
     pub auto_save: bool,
     /// View → Theme: `"light"`, `"dark"` or `"system"` (see `ui_style::ThemeChoice`).
     pub theme: String,
@@ -67,7 +69,7 @@ impl Default for UserPreferences {
             side_by_side_scroll_sync: true,
             zoom_factor: 1.0,
             mode: String::new(),
-            start_mode: String::new(),
+            new_files_mode: String::new(),
             auto_save: true,
             theme: crate::ui_style::ThemeChoice::default().as_str().to_owned(),
             word_wrap: true,

@@ -18,7 +18,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    RustdownApp,
+    Mode, RustdownApp,
     line_ending::EndOfLine,
     md::render::simple_hash,
     tab::{Tab, canonical_path},
@@ -50,6 +50,8 @@ struct SessionTab {
     /// For a file with unsaved text: a hash of the file's text the edits
     /// were made on, to notice when the file changed meanwhile.
     base_hash: Option<u64>,
+    /// How the tab was shown (empty in sessions from before 1.0.3).
+    mode: String,
 }
 
 /// The folder the session is kept in.
@@ -85,6 +87,7 @@ fn write_session(dir: &Path, tabs: &[Tab], active: usize) -> std::io::Result<()>
             base_hash: (doc.dirty && doc.path.is_some()).then(|| simple_hash(&doc.base_text)),
             unsaved,
             crlf: doc.line_ending == EndOfLine::CrLf,
+            mode: tab.mode.as_str().to_owned(),
         });
     }
     let text = toml::to_string_pretty(&session).map_err(std::io::Error::other)?;
@@ -108,8 +111,9 @@ fn write_session(dir: &Path, tabs: &[Tab], active: usize) -> std::io::Result<()>
 }
 
 /// The tabs of the session in `dir` (none when there is no session), and
-/// the index of the one that was active.
-fn read_session(dir: &Path) -> (Vec<Tab>, usize) {
+/// the index of the one that was active.  Tabs saved without a mode get
+/// `default_mode`.
+fn read_session(dir: &Path, default_mode: Mode) -> (Vec<Tab>, usize) {
     let Ok(text) = fs::read_to_string(dir.join(SESSION_FILE)) else {
         return (Vec::new(), 0);
     };
@@ -121,9 +125,11 @@ fn read_session(dir: &Path) -> (Vec<Tab>, usize) {
             .unsaved
             .as_deref()
             .and_then(|name| fs::read_to_string(dir.join(name)).ok());
-        let Some(tab) = restore_tab(entry, unsaved) else {
+        let mode = Mode::from_str_lossy(&entry.mode).unwrap_or(default_mode);
+        let Some(mut tab) = restore_tab(entry, unsaved) else {
             continue;
         };
+        tab.mode = mode;
         if index == session.active {
             active = tabs.len();
         }
@@ -190,8 +196,10 @@ impl RustdownApp {
         }
     }
 
+    /// The session's tabs come back in their own modes (old sessions: in
+    /// the mode last chosen, the one they were shown in).
     fn restore_session_from(&mut self, dir: &Path) {
-        let (restored, session_active) = read_session(dir);
+        let (restored, session_active) = read_session(dir, self.chosen_mode);
         let mut restored: Vec<Tab> = restored
             .into_iter()
             .filter(|tab| {
@@ -204,6 +212,7 @@ impl RustdownApp {
         if restored.is_empty() {
             return;
         }
+        self.store_active_mode();
         let launched = self
             .tabs
             .iter()
@@ -224,6 +233,7 @@ impl RustdownApp {
         if !self.keeps_session() {
             return;
         }
+        self.store_active_mode();
         if let Some(dir) = session_dir() {
             let _ = write_session(&dir, &self.tabs, self.active);
         }
@@ -231,13 +241,20 @@ impl RustdownApp {
         self.session_changed_at = None;
     }
 
-    /// What the session depends on: the tabs, their files and edits, and
-    /// the active one.
+    /// What the session depends on: the tabs, their files, edits and
+    /// modes, and the active one.
     fn current_session_signature(&self) -> u64 {
         let mut hasher = std::hash::DefaultHasher::new();
-        self.active.hash(&mut hasher);
+        (self.active, self.mode).hash(&mut hasher);
         for tab in &self.tabs {
-            (tab.id, &tab.doc.path, tab.doc.edit_seq, tab.doc.dirty).hash(&mut hasher);
+            (
+                tab.id,
+                &tab.doc.path,
+                tab.doc.edit_seq,
+                tab.doc.dirty,
+                tab.mode,
+            )
+                .hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -286,6 +303,7 @@ mod tests {
         let mut edited = Tab::from_path(file.clone()).unwrap_or_default();
         edited.doc.text = Arc::new("on disk\nand typed\n".to_owned());
         edited.note_text_changed(false);
+        edited.mode = Mode::Preview;
         let tabs = vec![untitled(""), untitled("draft"), edited];
         let session = dir.join("session");
         assert!(write_session(&session, &tabs, 2).is_ok());
@@ -299,6 +317,20 @@ mod tests {
         assert_eq!(app.tabs[1].doc.base_text.as_str(), "on disk\n");
         assert!(app.tabs[1].error.is_none());
         assert_eq!(app.active, 1, "the active tab is active again");
+        assert_eq!(app.tabs[0].mode, Mode::Edit);
+        assert_eq!(app.mode, Mode::Preview, "in its own mode");
+
+        // A session from before tabs had modes: the mode given.
+        let old = dir.join("old");
+        let _ = fs::create_dir_all(&old);
+        let _ = fs::write(old.join("tab-1.txt"), "old");
+        let _ = fs::write(
+            old.join(SESSION_FILE),
+            "[[tabs]]\nunsaved = \"tab-1.txt\"\n",
+        );
+        let (tabs, _) = read_session(&old, Mode::SideBySide);
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].mode, Mode::SideBySide);
 
         // The file changed meanwhile: the edits come back with a warning.
         let _ = fs::write(&file, "changed elsewhere\n");

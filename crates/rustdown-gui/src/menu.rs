@@ -116,8 +116,10 @@ pub(crate) const SETTINGS_DOCUMENT_ITEMS: [(&str, AppCommand); 2] = [
         AppCommand::OpenBundled(BundledDoc::Verification),
     ),
 ];
-/// Settings → Start in: the item that starts in the mode last chosen.
-const START_IN_LAST_USED: &str = "Last used mode";
+/// Settings → New files open in: the caption, and the item for the mode
+/// last chosen.
+const NEW_FILES_CAPTION: &str = "New files open in";
+const NEW_FILES_LAST_USED: &str = "Last used mode";
 pub(crate) const SETTINGS_ABOUT_ITEM: (&str, AppCommand) =
     (crate::about::ABOUT_TITLE, AppCommand::ShowAbout);
 
@@ -650,12 +652,12 @@ impl RustdownApp {
             self.menu_entry(ui, theme.label(), mark, true, AppCommand::SetTheme(theme));
         }
         separator(ui);
-        // The mode to start in and open Markdown files in.
-        caption(ui, "Start in");
+        // The mode of newly opened files and new tabs.
+        caption(ui, NEW_FILES_CAPTION);
         for mode in std::iter::once(None).chain(Mode::ALL.map(Some)) {
-            let label = mode.map_or(START_IN_LAST_USED, Mode::short_label);
-            let mark = Mark::Radio(self.start_mode == mode);
-            self.menu_entry(ui, label, mark, true, AppCommand::SetStartMode(mode));
+            let label = mode.map_or(NEW_FILES_LAST_USED, Mode::short_label);
+            let mark = Mark::Radio(self.new_files_mode == mode);
+            self.menu_entry(ui, label, mark, true, AppCommand::SetNewFilesMode(mode));
         }
         separator(ui);
         self.zoom_slider(ui);
@@ -1329,10 +1331,10 @@ mod tests {
         assert_eq!(app.theme, ThemeChoice::Dark);
         assert_eq!(ui.ctx.theme(), egui::Theme::Dark);
 
-        app.start_mode = Some(Mode::Preview);
+        app.new_files_mode = Some(Mode::Preview);
         let _ = open(&mut ui, &mut app, gear);
-        let _ = ui.click_text(&mut app, START_IN_LAST_USED);
-        assert_eq!(app.start_mode, None);
+        let _ = ui.click_text(&mut app, NEW_FILES_LAST_USED);
+        assert_eq!(app.new_files_mode, None);
 
         let _ = open(&mut ui, &mut app, gear);
         let _ = ui.click_text(&mut app, SETTINGS_ABOUT_ITEM.0);
@@ -1747,8 +1749,8 @@ mod tests {
         for text in [
             "Theme",
             "Dark",
-            "Start in",
-            START_IN_LAST_USED,
+            NEW_FILES_CAPTION,
+            NEW_FILES_LAST_USED,
             "Zoom",
             "Close window with last tab",
             "Demo document",

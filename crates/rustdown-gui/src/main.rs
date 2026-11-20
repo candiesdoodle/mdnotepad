@@ -278,14 +278,17 @@ struct RustdownApp {
     /// Index of the active tab in `tabs`; always in bounds.
     active: usize,
 
+    /// How the active tab is shown.  Each tab has its own mode
+    /// ([`Tab::mode`]); this is the active tab's while it is active.
     mode: Mode,
     /// The mode last chosen in the View menu, the status bar or with
-    /// Ctrl+Enter (persisted as `mode`): Start in → Last used starts in it.
-    /// A mode the app chose itself (Raw for a `.txt` file) is not kept.
+    /// Ctrl+Enter (persisted as `mode`): New files open in → Last used
+    /// opens them in it.  A mode the app chose itself (Raw for a `.txt`
+    /// file) is not kept.
     chosen_mode: Mode,
-    /// Settings → Start in: the mode to start in and open Markdown files
-    /// in; `None` is Last used ([`Self::chosen_mode`]).  Persisted.
-    start_mode: Option<Mode>,
+    /// Settings → New files open in: the mode of a newly opened file or a
+    /// new tab; `None` is Last used ([`Self::chosen_mode`]).  Persisted.
+    new_files_mode: Option<Mode>,
     /// Find/replace bar.  App-wide (like Notepad's): the query survives tab
     /// switches and always applies to the active tab.
     search: SearchState,
@@ -394,7 +397,7 @@ impl Default for RustdownApp {
             active: 0,
             mode: Mode::default(),
             chosen_mode: Mode::default(),
-            start_mode: None,
+            new_files_mode: None,
             search: SearchState::default(),
             focus_search: false,
             nav_visible: false,
@@ -464,7 +467,7 @@ enum CloseChoice {
 
 /// How the active document is shown.  The status-bar switch, the View
 /// menu and Ctrl+Enter go through them in [`Mode::ALL`] order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 enum Mode {
     /// The formatted (live-preview) editor (`live_format.rs`).
     #[default]

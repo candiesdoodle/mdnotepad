@@ -68,8 +68,8 @@ pub(crate) enum AppCommand {
     // ── View ──
     SetMode(Mode),
     CycleMode,
-    /// Settings → Start in (`None`: Last used).
-    SetStartMode(Option<Mode>),
+    /// Settings → New files open in (`None`: Last used).
+    SetNewFilesMode(Option<Mode>),
     ToggleOutline,
     ZoomIn,
     ZoomOut,
@@ -336,8 +336,8 @@ impl RustdownApp {
                 self.show_format_toolbar = !self.show_format_toolbar;
                 self.save_preferences();
             }
-            AppCommand::SetStartMode(mode) => {
-                self.start_mode = mode;
+            AppCommand::SetNewFilesMode(mode) => {
+                self.new_files_mode = mode;
                 self.save_preferences();
             }
             AppCommand::SetTheme(theme) => {

@@ -7,7 +7,7 @@ This repo is **MdNotePad** (`MdNotePad.exe`), a native (non-webview) Notepad-sty
   - `src/main.rs` — `RustdownApp` (tabs + app-wide settings), `update()` frame order
   - `src/app_identity.rs` — the app's name (`MdNotePad`) and id (`mdnotepad`) in one place: title, About, `--version`, settings / crash-log folders, pipe name, registry plan, file names; `LEGACY_APP_IDS` for settings and registry migration after a rename. A rename also touches `[[bin]] name`, `windows/*.rc` and the workflows' exe paths
   - `src/about.rs` — About box (name, version, copyright, credit) and the embedded LICENSE / THIRD-PARTY-NOTICES.md window
-  - `src/tab.rs` — `Tab`: all per-document state and document actions (load/save/conflicts)
+  - `src/tab.rs` — `Tab`: all per-document state (its mode too: the app's `mode` is the active tab's, stored back on a tab switch) and document actions (load/save/conflicts)
   - `src/commands.rs` — `AppCommand`, key bindings, `RustdownApp::execute`
   - `src/title_bar.rs` — custom title bar of the frameless window (icon, tabs, drag region, caption buttons) and the resize edges
   - `src/menu.rs` / `src/tab_strip.rs` — menu row (File · Edit · View, formatting controls, settings gear) and the tabs in the title bar; every popup (menus, submenu, formatting dropdowns, settings, explorer context menus) uses `menu::popup_style` and draws its items with `menu::menu_row` (Windows 11 menu geometry: 30-high rows, lead column for marks / icons, shortcut column, painted submenu arrow)

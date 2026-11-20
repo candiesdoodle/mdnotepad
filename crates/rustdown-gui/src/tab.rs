@@ -55,6 +55,10 @@ pub(crate) struct PreviewStyleCache {
 pub(crate) struct Tab {
     pub(crate) id: TabId,
     pub(crate) doc: Document,
+    /// How this document is shown.  While the tab is active the app's
+    /// `mode` is the live value; it is stored back here when another tab
+    /// becomes active.
+    pub(crate) mode: crate::Mode,
     pub(crate) disk: DiskSyncState,
     /// Outline for this document.  Its `visible` flag is driven by the
     /// app-wide `RustdownApp::nav_visible` preference.
@@ -95,6 +99,7 @@ impl Default for Tab {
         Self {
             id: next_tab_id(),
             doc: Document::default(),
+            mode: crate::Mode::default(),
             disk: DiskSyncState::default(),
             nav: nav::panel::NavState::default(),
             error: None,

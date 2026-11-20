@@ -29,22 +29,9 @@ impl RustdownApp {
         // A folder argument opens it in the Explorer instead of a tab.
         let folder = options.path.take_if(|path| path.is_dir());
 
-        // A mode flag on the command line wins, and a plain text file opens
-        // as plain text (Raw); otherwise Settings → Start in decides, with
-        // or without a file.
-        let chosen_mode = Mode::from_str_lossy(&prefs.mode).unwrap_or_default();
-        let start_mode = Mode::from_str_lossy(&prefs.start_mode);
-        let text_file = options.path.as_deref().is_some_and(crate::is_text_path);
-        let mode = if options.mode_explicit || text_file {
-            options.mode
-        } else {
-            start_mode.unwrap_or(chosen_mode)
-        };
-
         let mut app = Self {
-            mode,
-            chosen_mode,
-            start_mode,
+            chosen_mode: Mode::from_str_lossy(&prefs.mode).unwrap_or_default(),
+            new_files_mode: Mode::from_str_lossy(&prefs.new_files_mode),
             nav_visible: prefs.nav_visible,
             heading_color_mode: prefs.heading_color_mode,
             side_by_side_scroll_sync: prefs.side_by_side_scroll_sync,
@@ -61,8 +48,17 @@ impl RustdownApp {
         };
         app.spell.enabled = prefs.spell_check;
         app.restore_explorer(&prefs.explorer, folder.as_deref());
+        // The start tab and the file opened take Settings → New files open
+        // in; a mode flag on the command line wins.
+        let untitled = app.untitled_mode();
+        app.mode = untitled;
+        app.tab_mut().mode = untitled;
         if let Some(path) = options.path {
             app.open_path(path);
+        }
+        if options.mode_explicit {
+            app.mode = options.mode;
+            app.tab_mut().mode = options.mode;
         }
         // Auto-show nav in preview modes if heading count exceeds threshold.
         app.maybe_auto_show_nav();
@@ -90,15 +86,50 @@ impl RustdownApp {
         if index >= self.tabs.len() || index == self.active {
             return;
         }
+        self.store_active_mode();
         self.active = index;
         self.on_active_tab_changed();
     }
 
+    /// Before the active tab changes: keep its mode in the tab.
+    pub(crate) fn store_active_mode(&mut self) {
+        let mode = self.mode;
+        self.tab_mut().mode = mode;
+    }
+
+    /// After the active tab changed (call [`Self::store_active_mode`]
+    /// before): the new active tab's mode, search and focus.
     pub(crate) fn on_active_tab_changed(&mut self) {
+        // Each tab keeps its own mode (and the caches for it).
+        self.mode = self.tab().mode;
         // `edit_seq` is per document, so a cached count may belong to another tab.
         self.search.invalidate_match_cache();
         self.scroll_to_active_tab = true;
         self.focus_editor = true;
+    }
+
+    /// Settings → New files open in, or the mode last chosen.
+    fn new_files_mode(&self) -> Mode {
+        self.new_files_mode.unwrap_or(self.chosen_mode)
+    }
+
+    /// The mode of a newly opened file: a plain text file (`.txt`) shows
+    /// as plain text, others in [`Self::new_files_mode`].
+    fn file_mode(&self, path: &Path) -> Mode {
+        if crate::is_text_path(path) {
+            Mode::Raw
+        } else {
+            self.new_files_mode()
+        }
+    }
+
+    /// The mode of a new Untitled tab: never Preview, which would show
+    /// nothing to type into.
+    fn untitled_mode(&self) -> Mode {
+        match self.new_files_mode() {
+            Mode::Preview => Mode::Edit,
+            mode => mode,
+        }
     }
 
     /// Activate the next (`forward`) or previous tab, wrapping around.
@@ -116,6 +147,7 @@ impl RustdownApp {
     pub(crate) fn new_tab(&mut self) {
         let mut tab = Tab::default();
         tab.doc.line_ending = self.untitled_line_ending;
+        tab.mode = self.untitled_mode();
         self.tabs.push(tab);
         self.activate_tab(self.tabs.len() - 1);
     }
@@ -123,6 +155,7 @@ impl RustdownApp {
     /// Add `tab` and activate it.  An untouched Untitled active tab is
     /// replaced instead of kept next to it (as Notepad does).
     pub(crate) fn add_tab(&mut self, tab: Tab) {
+        self.store_active_mode();
         if self.tab().is_untouched() {
             self.tabs[self.active] = tab;
             self.on_active_tab_changed();
@@ -142,8 +175,10 @@ impl RustdownApp {
             self.activate_tab(index);
             return;
         }
+        let mode = self.file_mode(&path);
         match Tab::from_path(path) {
-            Ok(tab) => {
+            Ok(mut tab) => {
+                tab.mode = mode;
                 self.note_recent_file(&canonical);
                 self.add_tab(tab);
             }
@@ -203,7 +238,9 @@ impl RustdownApp {
     }
 
     pub(crate) fn open_bundled(&mut self, bundled: BundledDoc) {
-        self.add_tab(Tab::from_bundled(bundled));
+        let mut tab = Tab::from_bundled(bundled);
+        tab.mode = self.new_files_mode();
+        self.add_tab(tab);
     }
 
     /// Close tab `id`, asking "Save changes?" first if it is dirty.
@@ -230,6 +267,7 @@ impl RustdownApp {
         if index >= self.tabs.len() {
             return;
         }
+        self.store_active_mode();
         if self.tabs.len() == 1 {
             if self.close_window_with_last_tab {
                 self.window_close_pending = true;
@@ -380,9 +418,12 @@ impl RustdownApp {
 
     // ── Mode, preferences, zoom ─────────────────────────────────────────
 
+    /// Show the active tab in `mode` (View menu, status bar, Ctrl+Enter);
+    /// also the mode last chosen, for New files open in → Last used.
     pub(crate) fn set_mode(&mut self, mode: Mode, ctx: &egui::Context) {
         let newly_chosen = self.chosen_mode != mode;
         self.chosen_mode = mode;
+        self.tab_mut().mode = mode;
         if self.mode == mode {
             if newly_chosen {
                 self.save_preferences();
@@ -396,22 +437,21 @@ impl RustdownApp {
         let scroll_byte = self.tab_mut().current_scroll_byte_offset(ctx, old_mode);
 
         self.mode = mode;
-        for tab in &mut self.tabs {
-            tab.clear_side_by_side_scroll_state();
-            if mode == Mode::Preview {
-                // Preview doesn't render the editor; drop any cached galley to reduce memory.
-                tab.doc.clear_editor_caches();
-            }
-            if mode != Mode::Edit {
-                // Only Edit lays the text out formatted.
-                tab.doc.formatted_analysis = None;
-            }
-            if matches!(mode, Mode::Edit | Mode::Raw) {
-                // No preview in these modes; drop its cache to reduce memory.
-                tab.doc.preview_cache.clear();
-                tab.doc.preview_dirty = false;
-                tab.doc.last_edit_at = None;
-            }
+        let tab = self.tab_mut();
+        tab.clear_side_by_side_scroll_state();
+        if mode == Mode::Preview {
+            // Preview doesn't render the editor; drop any cached galley to reduce memory.
+            tab.doc.clear_editor_caches();
+        }
+        if mode != Mode::Edit {
+            // Only Edit lays the text out formatted.
+            tab.doc.formatted_analysis = None;
+        }
+        if matches!(mode, Mode::Edit | Mode::Raw) {
+            // No preview in these modes; drop its cache to reduce memory.
+            tab.doc.preview_cache.clear();
+            tab.doc.preview_dirty = false;
+            tab.doc.last_edit_at = None;
         }
 
         // Auto-show nav in preview modes if heading count exceeds threshold.
@@ -466,7 +506,7 @@ impl RustdownApp {
             side_by_side_scroll_sync: self.side_by_side_scroll_sync,
             zoom_factor: self.zoom,
             mode: self.chosen_mode.as_str().to_owned(),
-            start_mode: self.start_mode.map_or("last", Mode::as_str).to_owned(),
+            new_files_mode: self.new_files_mode.map_or("last", Mode::as_str).to_owned(),
             auto_save: self.auto_save,
             theme: self.theme.as_str().to_owned(),
             word_wrap: self.word_wrap,

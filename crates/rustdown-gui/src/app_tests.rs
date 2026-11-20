@@ -527,53 +527,68 @@ fn persisted_mode_restores_raw_and_maps_the_old_markdown_syntax_setting() {
         RustdownApp::from_launch_options_and_preferences(parse(&[]), &prefs).mode,
         Mode::Raw
     );
-    // A file on the command line opens in it too.
-    assert_eq!(
-        RustdownApp::from_launch_options_and_preferences(parse(&["missing.md"]), &prefs).mode,
-        Mode::Raw
-    );
 }
 
 #[test]
-fn start_in_setting_picks_the_mode_with_or_without_a_file() {
+fn new_files_open_in_the_setting_and_tabs_keep_their_modes() {
+    let dir = std::env::temp_dir().join(format!("mdnotepad-new-files-{}", std::process::id()));
+    let _ = fs::create_dir_all(&dir);
+    let (a, b, txt) = (dir.join("a.md"), dir.join("b.md"), dir.join("notes.txt"));
+    for path in [&a, &b, &txt] {
+        let _ = fs::write(path, "# x\n");
+    }
+    let a_arg = a.to_string_lossy().into_owned();
+    let txt_arg = txt.to_string_lossy().into_owned();
+    let (a_arg, txt_arg) = (a_arg.as_str(), txt_arg.as_str());
     let launch = |prefs: &str, args: &[&str]| {
         let prefs = crate::preferences::UserPreferences::from_toml(prefs);
         RustdownApp::from_launch_options_and_preferences(parse(args), &prefs).mode
     };
     // Last used (the default): the mode last chosen.
-    assert_eq!(launch("", &[]), Mode::Edit);
-    assert_eq!(launch("", &["missing.md"]), Mode::Edit);
-    let split = "mode = \"sidebyside\"\nstart_mode = \"last\"\n";
-    assert_eq!(launch(split, &["missing.md"]), Mode::SideBySide);
-    // A fixed mode, whatever was chosen last.
-    let preview = "mode = \"raw\"\nstart_mode = \"preview\"\n";
-    assert_eq!(launch(preview, &[]), Mode::Preview);
-    assert_eq!(launch(preview, &["missing.md"]), Mode::Preview);
-    // A mode flag wins; a text file opens as plain text.
-    assert_eq!(launch(preview, &["-e", "missing.md"]), Mode::Edit);
-    assert_eq!(launch(preview, &["notes.txt"]), Mode::Raw);
-
-    // Saved: the setting, and the mode last chosen (not Raw picked for a
-    // text file).
-    let ctx = egui::Context::default();
-    let prefs = crate::preferences::UserPreferences::from_toml("mode = \"edit\"\n");
-    let mut app = RustdownApp::from_launch_options_and_preferences(parse(&["notes.txt"]), &prefs);
-    assert_eq!(app.mode, Mode::Raw);
-    assert_eq!(app.preferences().mode, "edit");
-    assert_eq!(app.preferences().start_mode, "last");
-    app.execute(AppCommand::SetStartMode(Some(Mode::Preview)), &ctx);
-    assert_eq!(app.preferences().start_mode, "preview");
-    // Choosing the mode already shown still counts.
-    app.execute(AppCommand::SetMode(Mode::Raw), &ctx);
-    assert_eq!(app.preferences().mode, "raw");
-    app.execute(AppCommand::SetStartMode(None), &ctx);
-    let saved = toml::to_string_pretty(&app.preferences()).unwrap_or_default();
-    assert!(saved.contains("start_mode = \"last\""), "{saved}");
-    let prefs = crate::preferences::UserPreferences::from_toml(&saved);
+    assert_eq!(launch("", &[a_arg]), Mode::Edit);
     assert_eq!(
-        RustdownApp::from_launch_options_and_preferences(parse(&["missing.md"]), &prefs).mode,
-        Mode::Raw
+        launch("mode = \"sidebyside\"\n", &[a_arg]),
+        Mode::SideBySide
     );
+    assert_eq!(launch("mode = \"raw\"\n", &[]), Mode::Raw);
+    // A fixed mode (1.0.2 saved it as start_mode).
+    let preview = "mode = \"raw\"\nnew_files_mode = \"preview\"\n";
+    assert_eq!(launch(preview, &[a_arg]), Mode::Preview);
+    assert_eq!(
+        launch("start_mode = \"preview\"\n", &[a_arg]),
+        Mode::Preview
+    );
+    // An Untitled tab is never in Preview; a mode flag wins; a text file
+    // opens as plain text.
+    assert_eq!(launch(preview, &[]), Mode::Edit);
+    assert_eq!(launch(preview, &["-e", a_arg]), Mode::Edit);
+    assert_eq!(launch(preview, &[txt_arg]), Mode::Raw);
+
+    // Each tab keeps its mode; a new file takes the setting.
+    let ctx = egui::Context::default();
+    let prefs = crate::preferences::UserPreferences::from_toml(preview);
+    let mut app = RustdownApp::from_launch_options_and_preferences(parse(&[a_arg]), &prefs);
+    app.set_mode(Mode::SideBySide, &ctx);
+    app.open_path(b);
+    assert_eq!((app.active, app.mode), (1, Mode::Preview));
+    app.activate_tab(0);
+    assert_eq!(app.mode, Mode::SideBySide, "a.md as it was");
+    app.new_tab();
+    assert_eq!(app.mode, Mode::Edit);
+    app.close_tab_now(2);
+    assert_eq!((app.active, app.mode), (1, Mode::Preview));
+
+    // Saved: the setting, and the mode last chosen.
+    app.execute(AppCommand::SetNewFilesMode(None), &ctx);
+    let saved = app.preferences();
+    assert_eq!(
+        (saved.mode.as_str(), saved.new_files_mode.as_str()),
+        ("sidebyside", "last")
+    );
+    // Choosing the mode already shown still counts.
+    app.execute(AppCommand::SetMode(Mode::Preview), &ctx);
+    assert_eq!(app.preferences().mode, "preview");
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1664,7 +1679,7 @@ fn open_path_reuses_untouched_tab_and_focuses_already_open_file() {
     assert_eq!(app.tab().doc.text.as_str(), "# A\n");
 
     // A second file gets its own tab.
-    app.open_path(b.clone());
+    app.open_path(b);
     assert_eq!(app.tabs.len(), 2);
     assert_eq!(app.active, 1);
 

@@ -31,7 +31,7 @@ Native and fast: no web view, no Electron, no account, no network.
 
 **Read and share**
 
-- **Four modes:** Edit (formatted), Raw (plain text, like Notepad), Split (raw text next to the preview) and Preview. Ctrl+Enter switches; files open in the mode you used last, or the one set in Settings → *Start in*.
+- **Four modes:** Edit (formatted), Raw (plain text, like Notepad), Split (raw text next to the preview) and Preview. Ctrl+Enter switches. Each tab keeps its own mode; new files open in the mode you used last, or the one set in Settings → *New files open in*.
 - **Outline panel** of the headings, a **folder panel**, and **Quick open** (Ctrl+P).
 - **Print** and **Save as PDF**, diagrams included.
 - **Copy as formatted text** to paste into email or Word with the formatting kept.
